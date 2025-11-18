@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simple Block Maze</title>
+  <style>
+    :root{--size:28px;--gap:4px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0f172a;margin:0;color:#e6eef8}
+    .wrap{display:flex;flex-direction:column;gap:12px;align-items:center}
+    h1{margin:0;font-size:18px}
+    #maze{display:grid;grid-template-columns:repeat(15,var(--size));grid-auto-rows:var(--size);gap:var(--gap);background:#061226;padding:16px;border-radius:12px}
+    .cell{width:var(--size);height:var(--size);display:flex;align-items:center;justify-content:center;border-radius:4px;box-shadow:inset 0 -2px 0 rgba(0,0,0,0.35)}
+    .wall{background:#1f2937}
+    .path{background:#dbeafe}
+    .start{background:#a7f3d0}
+    .end{background:#fbcfe8;animation:pulse 1s infinite alternate;box-shadow:0 0 12px 4px #f9a8d4}
+    @keyframes pulse{from{transform:scale(1);box-shadow:0 0 12px 4px #f9a8d4;}to{transform:scale(1.1);box-shadow:0 0 20px 8px #f472b6;}}
+    .player{width:70%;height:70%;background:#0ea5a4;border-radius:4px;box-shadow:0 2px 6px rgba(2,6,23,0.6)}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+    button{background:#2563eb;color:white;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .info{font-size:13px;opacity:0.9}
+    #moveCount{font-size:14px;color:#facc15;font-weight:bold;margin-left:10px}
+    @media (max-width:480px){:root{--size:22px;--gap:3px}} 
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Maze Solving Quiz</h1>
+    <div id="maze" aria-label="maze grid"></div>
+    <div class="controls">
+      <button id="reset">Reset</button>
+      <button id="shuffle">New Maze</button>
+      <button id="solve">Solve Maze</button>
+      <div class="info">Use arrow keys (or WASD) to move to the glowing pink goal.</div>
+      <div id="moveCount">Moves: 0</div>
+    </div>
+  </div>
+
+  <script>
+    const BASE_MAZE = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,0,0,0,1,0,0,0,0,0,0,1,0,0,1],
+      [1,0,1,0,1,0,1,1,1,1,0,1,0,1,1],
+      [1,0,1,0,0,0,0,0,0,1,0,0,0,0,1],
+      [1,0,1,1,1,1,1,1,0,1,1,1,1,0,1],
+      [1,0,0,0,0,0,0,1,0,0,0,0,1,0,1],
+      [1,1,1,1,1,1,0,1,1,1,1,0,1,0,1],
+      [1,0,0,0,0,1,0,0,0,0,1,0,0,0,1],
+      [1,0,1,1,0,1,1,1,1,0,1,1,1,0,1],
+      [1,0,0,1,0,0,0,0,1,0,0,0,1,0,1],
+      [1,1,0,1,1,1,1,0,1,1,1,0,1,0,1],
+      [1,0,0,0,0,0,1,0,0,0,1,0,0,0,1],
+      [1,0,1,1,1,0,1,1,1,0,1,1,1,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,0,0,2,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    const ROWS = BASE_MAZE.length;
+    const COLS = BASE_MAZE[0].length;
+
+    let maze = [];
+    let player = {r:1,c:1};
+    let endPos = {r:13,c:13};
+    let moves = 0;
+
+    const mazeEl = document.getElementById('maze');
+    const moveCountEl = document.getElementById('moveCount');
+
+    function cloneTemplate(){
+      return BASE_MAZE.map(row=>row.slice());
+    }
+
+    function randomizeMaze(){
+      const newMaze = cloneTemplate();
+      for(let r=1;r<ROWS-1;r++){
+        for(let c=1;c<COLS-1;c++){
+          if(Math.random()<0.2) newMaze[r][c] = 1; else newMaze[r][c] = 0;
+        }
+      }
+      newMaze[1][1] = 0;
+      newMaze[ROWS-2][COLS-2] = 2;
+      return newMaze;
+    }
+
+    function render(){
+      mazeEl.innerHTML = '';
+      mazeEl.style.gridTemplateColumns = `repeat(${COLS}, var(--size))`;
+      for(let r=0;r<ROWS;r++){
+        for(let c=0;c<COLS;c++){
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const val = maze[r][c];
+          if(r===player.r && c===player.c){
+            cell.classList.add('path');
+            const p = document.createElement('div');
+            p.className = 'player';
+            cell.appendChild(p);
+          } else if(r===1 && c===1){
+            cell.classList.add('start');
+          } else if(val===2 || (r===endPos.r && c===endPos.c)){
+            cell.classList.add('end');
+          } else if(val===1){
+            cell.classList.add('wall');
+          } else {
+            cell.classList.add('path');
+          }
+          mazeEl.appendChild(cell);
+        }
+      }
+    }
+
+    function move(dr,dc){
+      const nr = player.r + dr;
+      const nc = player.c + dc;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) return;
+      if(maze[nr][nc]===1) return;
+      player.r = nr; player.c = nc;
+      moves++;
+      moveCountEl.textContent = `Moves: ${moves}`;
+      render();
+      checkGoal();
+    }
+
+    function checkGoal(){
+      if(player.r===endPos.r && player.c===endPos.c){
+        setTimeout(()=>alert(`You reached the glowing goal in ${moves} moves! (Optimal path: ${solveMaze()} moves) 🎉`),60);
+      }
+    }
+
+    // BFS Maze Solver
+    function solveMaze(){
+      const directions = [[1,0],[-1,0],[0,1],[0,-1]];
+      const queue = [{r:1,c:1,dist:0}];
+      const visited = Array.from({length:ROWS},()=>Array(COLS).fill(false));
+      visited[1][1]=true;
+      while(queue.length){
+        const {r,c,dist} = queue.shift();
+        if(maze[r][c]===2){
+          return dist;
+        }
+        for(const [dr,dc] of directions){
+          const nr=r+dr, nc=c+dc;
+          if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&!visited[nr][nc]&&maze[nr][nc]!==1){
+            visited[nr][nc]=true;
+            queue.push({r:nr,c:nc,dist:dist+1});
+          }
+        }
+      }
+      return -1;
+    }
+
+    window.addEventListener('keydown', e=>{
+      const key = e.key;
+      if(['ArrowUp','w','W'].includes(key)) { e.preventDefault(); move(-1,0);} 
+      else if(['ArrowDown','s','S'].includes(key)){ e.preventDefault(); move(1,0);} 
+      else if(['ArrowLeft','a','A'].includes(key)){ e.preventDefault(); move(0,-1);} 
+      else if(['ArrowRight','d','D'].includes(key)){ e.preventDefault(); move(0,1);} 
+    });
+
+    document.getElementById('reset').addEventListener('click',()=>{
+      player = {r:1,c:1}; moves = 0; moveCountEl.textContent = 'Moves: 0'; maze = cloneTemplate(); render();
+    });
+
+    document.getElementById('shuffle').addEventListener('click',()=>{
+      player = {r:1,c:1}; moves = 0; moveCountEl.textContent = 'Moves: 0'; maze = randomizeMaze();
+      endPos = {r:ROWS-2, c:COLS-2};
+      render();
+    });
+
+    document.getElementById('solve').addEventListener('click',()=>{
+      const optimal = solveMaze();
+      alert(optimal>0 ? `The optimal solution requires ${optimal} moves.` : 'No path found.');
+    });
+
+    maze = cloneTemplate();
+    render();
+  </script>
+</body>
+</html>
